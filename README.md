@@ -3,6 +3,7 @@
 LSP-based extractor for Dafny proof/annotation tasks:
 - `focus`: full program with exactly one `/*[CODE HERE]*/` per task in the target lemma.
 - `focus --modular`: same, but **axiomatize other lemmas** by adding `{:axiom}` and **removing bodies** (signatures end with `;`).
+- `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 
 ## Install
 ```bash
@@ -24,4 +25,7 @@ python -m dafny_tasker.cli focus --file examples/bs_demo.dfy --lemma binarySearc
 
 # Focus (modular): axiomatized other lemmas
 python -m dafny_tasker.cli focus --file examples/bs_demo.dfy --lemma binarySearchCorrect --out modular.jsonl --modular
+
+# Axiomatize: transform file to axiomatize all lemmas except the target
+python -m dafny_tasker.cli axiomatize --file examples/bs_demo.dfy --lemma binarySearchCorrect --out axiomatized.dfy
 ```

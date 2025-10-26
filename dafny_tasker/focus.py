@@ -162,6 +162,38 @@ def build_focus_tasks(path: Path, lemma_name: str, modular: bool = False) -> Lis
             except Exception: pass
 
 
+def axiomatize_lemmas(input_path: Path, target_lemma: str, output_path: Path) -> bool:
+    """Axiomatize all lemmas except the target lemma and write to output file.
+
+    Args:
+        input_path: Path to the input Dafny file
+        target_lemma: Name of the lemma to keep (all others will be axiomatized)
+        output_path: Path where the transformed file will be written
+
+    Returns:
+        True if successful, False otherwise
+    """
+    text = input_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # Find the target lemma range
+    span = _find_target_lemma_range(input_path, target_lemma, lines)
+    if not span:
+        return False
+
+    _sl, _el, bstart, bend = span
+
+    # Axiomatize all other lemmas
+    mod_lines = _axiomatize_other_lemmas(input_path, lines, (bstart, bend))
+
+    # Write to output file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_text = "\n".join(mod_lines) + ("\n" if text.endswith("\n") else "")
+    output_path.write_text(output_text, encoding="utf-8")
+
+    return True
+
+
 def list_lemmas(path: Path) -> list[str]:
     """Return lemma names in file via LSP document symbols."""
     names: list[str] = []

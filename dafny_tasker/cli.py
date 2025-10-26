@@ -75,6 +75,16 @@ def cmd_focus(args: argparse.Namespace) -> int:
 
 
 
+def cmd_axiomatize(args: argparse.Namespace) -> int:
+    from .focus import axiomatize_lemmas
+    success = axiomatize_lemmas(args.file, args.lemma, args.out)
+    if not success:
+        print(f"error: could not find lemma '{args.lemma}' in {args.file}", file=sys.stderr)
+        return 2
+    print(f"wrote axiomatized file -> {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dafny-tasker", description="LSP-only Dafny focus task generator")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -87,6 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_focus.add_argument("--json-list", action="store_true", help="Write a JSON list instead of JSONL")
     p_focus.add_argument("--jsonl", action="store_true", help="Write JSONL (default)")
     p_focus.set_defaults(func=cmd_focus)
+    # axiomatize command
+    p_axiomatize = sub.add_parser("axiomatize", help="Axiomatize all lemmas except the target lemma")
+    p_axiomatize.add_argument("--file", dest="file", type=Path, required=True, help="Input .dfy file")
+    p_axiomatize.add_argument("--lemma", dest="lemma", type=str, required=True, help="Target lemma to preserve")
+    p_axiomatize.add_argument("--out", dest="out", type=Path, required=True, help="Output file path")
+    p_axiomatize.set_defaults(func=cmd_axiomatize)
     # keep optional 'check' subcommand if present
     try:
         p_check = sub.add_parser("check", help="Sanity-check a JSON list of focus tasks")
