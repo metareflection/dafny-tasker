@@ -84,7 +84,6 @@ def _inject_axiom_in_header(header: str) -> str:
         h = re.sub(r'\blemma\s*\{:\s*[^}]*\}', 'lemma ' + new_attr, h, count=1)
     else:
         h = re.sub(r'\blemma\b', 'lemma {:axiom}', h, count=1)
-    if not h.endswith(';'): h = h.rstrip() + ';'
     return h
 
 def _axiomatize_other_lemmas(path: Path, lines: List[str], target_body: Tuple[int,int]) -> List[str]:

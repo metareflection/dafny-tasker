@@ -2,7 +2,7 @@
 
 LSP-based extractor for Dafny proof/annotation tasks:
 - `focus`: full program with exactly one `/*[CODE HERE]*/` per task in the target lemma.
-- `focus --modular`: same, but **axiomatize other lemmas** by adding `{:axiom}` and **removing bodies** (signatures end with `;`).
+- `focus --modular`: same, but **axiomatize other lemmas** by adding `{:axiom}` and **removing bodies**.
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 
 ## Install
