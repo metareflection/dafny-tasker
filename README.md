@@ -20,7 +20,7 @@ export DAFNY_LSP_CMD="dafny server"
 
 ## Commands
 ```bash
-# Focus (regular): full program + one CODE_HERE
+# Focus (regular): full program + one CODE_HERE_MARKER
 python -m dafny_tasker.cli focus --file examples/bs_demo.dfy --lemma binarySearchCorrect --out focus.jsonl
 
 # Focus (modular): axiomatized other lemmas
@@ -28,4 +28,7 @@ python -m dafny_tasker.cli focus --file examples/bs_demo.dfy --lemma binarySearc
 
 # Axiomatize: transform file to axiomatize all lemmas except the target
 python -m dafny_tasker.cli axiomatize --file examples/bs_demo.dfy --lemma binarySearchCorrect --out axiomatized.dfy
+
+# Axiomatize: infer target lemma from CODE_HERE_MARKER location
+python -m dafny_tasker.cli axiomatize --file examples/bs_demo.dfy --out axiomatized.dfy
 ```

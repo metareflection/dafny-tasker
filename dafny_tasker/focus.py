@@ -207,3 +207,47 @@ def list_lemmas(path: Path) -> list[str]:
         if kind == "lemma" and isinstance(s.get("name"), str):
             names.append(s.get("name"))
     return names
+
+
+def find_lemma_containing_marker(path: Path) -> Optional[str]:
+    """Find the lemma that contains the CODE_HERE_MARKER.
+    
+    Args:
+        path: Path to the Dafny file
+        
+    Returns:
+        Name of the lemma containing the marker, or None if not found
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    
+    # Find the line with CODE_HERE_MARKER
+    marker_line = -1
+    for i, line in enumerate(lines):
+        if CODE_HERE_MARKER in line:
+            marker_line = i
+            break
+    
+    if marker_line == -1:
+        return None
+    
+    # Find which lemma contains this line
+    for s in document_symbols(path):
+        rng = s.get("range") or {}
+        start = rng.get("start") or {}
+        end = rng.get("end") or {}
+        sl = int(start.get("line", -1))
+        el = int(end.get("line", -1))
+        if sl < 0 or el < 0:
+            continue
+        
+        kind, nm = _header_kind_name(lines, sl)
+        if kind == "lemma" and isinstance(s.get("name"), str):
+            # Check if marker_line is within this lemma's body
+            body = _brace_body_bounds(lines, sl, el)
+            if body:
+                bstart, bend = body
+                if bstart <= marker_line <= bend:
+                    return s.get("name")
+    
+    return None

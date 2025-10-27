@@ -76,10 +76,21 @@ def cmd_focus(args: argparse.Namespace) -> int:
 
 
 def cmd_axiomatize(args: argparse.Namespace) -> int:
-    from .focus import axiomatize_lemmas
-    success = axiomatize_lemmas(args.file, args.lemma, args.out)
+    from .focus import axiomatize_lemmas, find_lemma_containing_marker
+    
+    lemma_name = args.lemma
+    
+    # If no lemma specified, try to find it based on CODE_HERE_MARKER
+    if not lemma_name:
+        lemma_name = find_lemma_containing_marker(args.file)
+        if not lemma_name:
+            print(f"error: no lemma specified and could not find CODE_HERE_MARKER in {args.file}", file=sys.stderr)
+            return 2
+        print(f"Found lemma '{lemma_name}' containing CODE_HERE_MARKER")
+    
+    success = axiomatize_lemmas(args.file, lemma_name, args.out)
     if not success:
-        print(f"error: could not find lemma '{args.lemma}' in {args.file}", file=sys.stderr)
+        print(f"error: could not find lemma '{lemma_name}' in {args.file}", file=sys.stderr)
         return 2
     print(f"wrote axiomatized file -> {args.out}")
     return 0
@@ -100,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     # axiomatize command
     p_axiomatize = sub.add_parser("axiomatize", help="Axiomatize all lemmas except the target lemma")
     p_axiomatize.add_argument("--file", dest="file", type=Path, required=True, help="Input .dfy file")
-    p_axiomatize.add_argument("--lemma", dest="lemma", type=str, required=True, help="Target lemma to preserve")
+    p_axiomatize.add_argument("--lemma", dest="lemma", type=str, required=False, help="Target lemma to preserve (if omitted, inferred from CODE_HERE_MARKER location)")
     p_axiomatize.add_argument("--out", dest="out", type=Path, required=True, help="Output file path")
     p_axiomatize.set_defaults(func=cmd_axiomatize)
     # keep optional 'check' subcommand if present
