@@ -5,6 +5,8 @@ LSP-based extractor for Dafny proof/annotation tasks:
 - `focus --modular`: same, but **axiomatize other lemmas** by adding `{:axiom}` and **removing bodies**.
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/metareflection/dafny-tasker)
+
 ## Install
 ```bash
 python3.12 -m venv .venv
