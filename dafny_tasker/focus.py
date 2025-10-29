@@ -9,8 +9,8 @@ from .constants import CODE_HERE_MARKER
 from .lsp_outline import document_symbols
 from .lsp_def import goto_definition, header_contains_lemma
 
-ASSERT_RE = re.compile(r'^\s*assert\b.*;\s*$')
-CALL_RE   = re.compile(r'^\s*(?P<callee>[A-Za-z_]\w*)\s*\(.*\)\s*;\s*$')
+ASSERT_RE = re.compile(r'^\s*(?:.*\{\s*)?assert\b.*;\s*(?://.*)?$')
+CALL_RE   = re.compile(r'^\s*(?:.*\{\s*)?(?P<callee>[A-Za-z_]\w*)\s*\(.*\)\s*;\s*(?://.*)?$')
 CALC_RE   = re.compile(r'^\s*calc\s*(==|>=|<=|>|<)?\s*\{')
 FORALL_RE = re.compile(r'^\s*forall\s+')
 
@@ -22,13 +22,25 @@ class Site:
     original: str      # Full text of the statement/block
 
 def _brace_body_bounds(lines: List[str], start_line: int, end_line: int) -> Optional[Tuple[int,int]]:
+    """Find the brace-delimited body of a lemma/method.
+
+    Returns (start_line, end_line) of the body, or None if no body found.
+    A body starts when we see more opening braces than closing braces on a line.
+    """
     n=len(lines); brace_open=-1
     for j in range(start_line, min(end_line+1,n)):
-        if '{' in lines[j]: brace_open=j; break
+        open_count = lines[j].count('{')
+        close_count = lines[j].count('}')
+        if open_count > close_count:
+            brace_open=j
+            break
     if brace_open==-1: return None
+
+    # Find where the body closes
     depth=0
     for k in range(brace_open, min(end_line+1,n)):
-        depth += lines[k].count('{'); depth -= lines[k].count('}')
+        depth += lines[k].count('{')
+        depth -= lines[k].count('}')
         if depth==0: return (brace_open,k)
     return None
 
