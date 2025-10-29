@@ -11,12 +11,15 @@ from .lsp_def import goto_definition, header_contains_lemma
 
 ASSERT_RE = re.compile(r'^\s*assert\b.*;\s*$')
 CALL_RE   = re.compile(r'^\s*(?P<callee>[A-Za-z_]\w*)\s*\(.*\)\s*;\s*$')
+CALC_RE   = re.compile(r'^\s*calc\s*(==|>=|<=|>|<)?\s*\{')
+FORALL_RE = re.compile(r'^\s*forall\s+')
 
 @dataclass
 class Site:
-    line_idx: int  # 0-based
-    kind: str      # 'assert' | 'lemma-call'
-    original: str
+    line_idx: int      # 0-based start line
+    end_idx: int       # 0-based end line (same as line_idx for single-line statements)
+    kind: str          # 'assert' | 'lemma-call' | 'calc' | 'forall'
+    original: str      # Full text of the statement/block
 
 def _brace_body_bounds(lines: List[str], start_line: int, end_line: int) -> Optional[Tuple[int,int]]:
     n=len(lines); brace_open=-1
@@ -27,6 +30,34 @@ def _brace_body_bounds(lines: List[str], start_line: int, end_line: int) -> Opti
     for k in range(brace_open, min(end_line+1,n)):
         depth += lines[k].count('{'); depth -= lines[k].count('}')
         if depth==0: return (brace_open,k)
+    return None
+
+def _find_brace_balanced_block(lines: List[str], start_idx: int) -> Optional[Tuple[int, str]]:
+    """Find a brace-balanced block starting from start_idx.
+
+    Args:
+        lines: List of lines
+        start_idx: Starting line index (0-based) that should contain an opening brace
+
+    Returns:
+        Tuple of (end_idx, full_text) or None if not found
+    """
+    if start_idx >= len(lines):
+        return None
+
+    # Find opening brace on the start line
+    if '{' not in lines[start_idx]:
+        return None
+
+    depth = 0
+    for i in range(start_idx, len(lines)):
+        depth += lines[i].count('{')
+        depth -= lines[i].count('}')
+        if depth == 0:
+            # Found the closing brace
+            full_text = "\n".join(lines[start_idx:i+1])
+            return (i, full_text)
+
     return None
 
 def _header_kind_name(lines: List[str], sl: int) -> Tuple[str,str]:
@@ -47,22 +78,80 @@ def _find_target_lemma_range(path: Path, lemma_name: str, lines: List[str]) -> O
             if body: return (sl, el, body[0], body[1])
     return None
 
-def _enumerate_sites(path: Path, lines: List[str], bstart: int, bend: int) -> List[Site]:
-    out: List[Site]=[]
-    for i in range(bstart, bend+1):
-        ln=lines[i]
-        if ASSERT_RE.match(ln):
-            out.append(Site(i,"assert",ln)); continue
-        mc = CALL_RE.match(ln)
-        if not mc: continue
-        callee = mc.group("callee")
-        col = ln.find(callee)
-        if col<0: continue
-        got = goto_definition(path, i, col)
-        if not got: continue
-        def_file, def_line0, _ = got
-        if header_contains_lemma(def_file, def_line0):
-            out.append(Site(i,"lemma-call",ln))
+def _enumerate_sites(path: Path, lines: List[str], bstart: int, bend: int, extract_types: set[str] = None) -> List[Site]:
+    """Enumerate sites (statements to extract) in a lemma body.
+
+    Args:
+        path: Path to the Dafny file
+        lines: List of lines in the file
+        bstart: Start line of lemma body (0-based)
+        bend: End line of lemma body (0-based)
+        extract_types: Set of types to extract ('assert', 'lemma-call', 'calc', 'forall')
+                      If None, defaults to {'assert', 'lemma-call'}
+
+    Returns:
+        List of Site objects
+    """
+    if extract_types is None:
+        extract_types = {'assert', 'lemma-call'}
+
+    out: List[Site] = []
+    i = bstart
+    while i <= bend:
+        ln = lines[i]
+
+        # Check for assert statements
+        if 'assert' in extract_types and ASSERT_RE.match(ln):
+            out.append(Site(i, i, "assert", ln))
+            i += 1
+            continue
+
+        # Check for calc statements
+        if 'calc' in extract_types and CALC_RE.match(ln):
+            block = _find_brace_balanced_block(lines, i)
+            if block:
+                end_idx, full_text = block
+                out.append(Site(i, end_idx, "calc", full_text))
+                i = end_idx + 1
+                continue
+
+        # Check for forall statements (not predicates - must have braces)
+        if 'forall' in extract_types and FORALL_RE.match(ln):
+            # Find the line with the opening brace (might be on a later line)
+            brace_line = None
+            for j in range(i, min(i + 5, len(lines))):  # Look up to 5 lines ahead
+                if '{' in lines[j]:
+                    brace_line = j
+                    break
+                # Stop if we hit a semicolon (it's a predicate, not a statement)
+                if ';' in lines[j]:
+                    break
+
+            if brace_line is not None:
+                block = _find_brace_balanced_block(lines, brace_line)
+                if block:
+                    end_idx, _ = block
+                    # Get full text from forall start to closing brace
+                    full_text = "\n".join(lines[i:end_idx+1])
+                    out.append(Site(i, end_idx, "forall", full_text))
+                    i = end_idx + 1
+                    continue
+
+        # Check for lemma calls
+        if 'lemma-call' in extract_types:
+            mc = CALL_RE.match(ln)
+            if mc:
+                callee = mc.group("callee")
+                col = ln.find(callee)
+                if col >= 0:
+                    got = goto_definition(path, i, col)
+                    if got:
+                        def_file, def_line0, _ = got
+                        if header_contains_lemma(def_file, def_line0):
+                            out.append(Site(i, i, "lemma-call", ln))
+
+        i += 1
+
     return out
 
 def _mask_whole_statement(line: str) -> str:
@@ -70,6 +159,30 @@ def _mask_whole_statement(line: str) -> str:
     indent = line[:indent_len]
     trailing = ";" if line.rstrip().endswith(";") else ""
     return f"{indent}{CODE_HERE_MARKER}{trailing}"
+
+def _mask_statement_block(lines: List[str], start_idx: int, end_idx: int) -> List[str]:
+    """Mask a multi-line statement block with CODE_HERE marker.
+
+    Args:
+        lines: List of all lines
+        start_idx: Starting line index (0-based) to mask
+        end_idx: Ending line index (0-based) to mask
+
+    Returns:
+        New list of lines with the block replaced by CODE_HERE
+    """
+    new_lines = lines[:]
+    if start_idx == end_idx:
+        # Single line - use existing function
+        new_lines[start_idx] = _mask_whole_statement(new_lines[start_idx])
+    else:
+        # Multi-line block - replace with single CODE_HERE line
+        first_line = lines[start_idx]
+        indent_len = len(first_line) - len(first_line.lstrip())
+        indent = first_line[:indent_len]
+        # Replace entire block with one line
+        new_lines[start_idx:end_idx+1] = [f"{indent}{CODE_HERE_MARKER}"]
+    return new_lines
 
 def _inject_axiom_in_header(header: str) -> str:
     h = re.sub(r'\s+', ' ', header.strip())
@@ -109,11 +222,24 @@ def _axiomatize_other_lemmas(path: Path, lines: List[str], target_body: Tuple[in
         out[sl:be+1] = [new_header]
     return out
 
-def build_focus_tasks(path: Path, lemma_name: str, modular: bool = False) -> List[Dict[str,Any]]:
+def build_focus_tasks(path: Path, lemma_name: str, modular: bool = False, extract_types: set[str] = None) -> List[Dict[str,Any]]:
     """Build tasks for a lemma. If modular=True, we first axiomatize other lemmas
     into a *temporary* Dafny file, then run the LSP on that edited program. This way,
     all ranges and line indices come from the edited program, avoiding any index mapping.
+
+    Args:
+        path: Path to the Dafny file
+        lemma_name: Name of the lemma to focus on
+        modular: If True, axiomatize other lemmas
+        extract_types: Set of types to extract ('assert', 'lemma-call', 'calc', 'forall')
+                      If None, defaults to {'assert', 'lemma-call'}
+
+    Returns:
+        List of task dictionaries
     """
+    if extract_types is None:
+        extract_types = {'assert', 'lemma-call'}
+
     text = path.read_text(encoding="utf-8"); lines = text.splitlines()
     # We'll decide which path and which lines to use for LSP and masking
     path_for_lsp = path
@@ -139,17 +265,16 @@ def build_focus_tasks(path: Path, lemma_name: str, modular: bool = False) -> Lis
         if not span:
             return []
         _sl, _el, bstart, bend = span
-        sites = _enumerate_sites(path_for_lsp, lines_for_lsp, bstart, bend)
+        sites = _enumerate_sites(path_for_lsp, lines_for_lsp, bstart, bend, extract_types)
 
         # Build tasks by masking lines in the same buffer (original or modularized) that the LSP used.
         tasks: List[Dict[str,Any]] = []
         for idx, site in enumerate(sites):
-            new_lines = lines_for_lsp[:]
-            new_lines[site.line_idx] = _mask_whole_statement(new_lines[site.line_idx])
+            new_lines = _mask_statement_block(lines_for_lsp, site.line_idx, site.end_idx)
             program = "\n".join(new_lines) + ("\n" if text.endswith("\n") else "")
             tasks.append({
                 "id": f"{path.stem}_{lemma_name}_{idx}",
-                "type": "call" if site.kind=="lemma-call" else "assert",
+                "type": site.kind,
                 "program": program,
                 "output": site.original.strip()
             })

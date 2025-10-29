@@ -38,11 +38,21 @@ def cmd_focus(args: argparse.Namespace) -> int:
         if f.suffix != ".dfy":
             continue
         key = str(f.resolve())
-        if key in seen: 
+        if key in seen:
             continue
         seen.add(key); uniq.append(f)
     if not uniq:
         print("no .dfy inputs provided (use --file or --inputs)", file=sys.stderr); return 2
+
+    # Parse extract_types from command line
+    extract_types_str = getattr(args, "extract_types", "assert,lemma-call")
+    extract_types = set(t.strip() for t in extract_types_str.split(',') if t.strip())
+    valid_types = {'assert', 'lemma-call', 'calc', 'forall'}
+    invalid_types = extract_types - valid_types
+    if invalid_types:
+        print(f"error: invalid extract types: {invalid_types}. Valid types: {valid_types}", file=sys.stderr)
+        return 2
+
     all_tasks = []
     for f in tqdm(uniq, desc="Processing files", unit="file"):
         if getattr(args, "lemma", None):
@@ -53,7 +63,7 @@ def cmd_focus(args: argparse.Namespace) -> int:
             tqdm.write(f"[warn] no lemmas found in {f}")
             continue
         for lm in tqdm(lemmas, desc=f"  {f.name}", leave=False, unit="lemma"):
-            tasks = build_focus_tasks(f, lm, modular=bool(args.modular))
+            tasks = build_focus_tasks(f, lm, modular=bool(args.modular), extract_types=extract_types)
             if tasks:
                 all_tasks.extend(tasks)
     if not all_tasks:
@@ -105,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_focus.add_argument("--lemma", dest="lemma", type=str, required=False, help="If omitted, process every lemma in each file")
     p_focus.add_argument("--out", dest="out", type=Path, required=True)
     p_focus.add_argument("--modular", action="store_true", help="Axiomatize other lemmas ({:axiom}; no bodies)")
+    p_focus.add_argument("--extract-types", dest="extract_types", type=str, default="assert,lemma-call",
+                        help="Comma-separated types to extract: assert,lemma-call,calc,forall (default: assert,lemma-call)")
     p_focus.add_argument("--json-list", action="store_true", help="Write a JSON list instead of JSONL")
     p_focus.add_argument("--jsonl", action="store_true", help="Write JSONL (default)")
     p_focus.set_defaults(func=cmd_focus)
