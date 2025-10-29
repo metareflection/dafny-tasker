@@ -169,8 +169,7 @@ def _enumerate_sites(path: Path, lines: List[str], bstart: int, bend: int, extra
 def _mask_whole_statement(line: str) -> str:
     indent_len = len(line) - len(line.lstrip())
     indent = line[:indent_len]
-    trailing = ";" if line.rstrip().endswith(";") else ""
-    return f"{indent}{CODE_HERE_MARKER}{trailing}"
+    return f"{indent}{CODE_HERE_MARKER}"
 
 def _mask_statement_block(lines: List[str], start_idx: int, end_idx: int) -> List[str]:
     """Mask a multi-line statement block with CODE_HERE marker.
