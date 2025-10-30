@@ -4,7 +4,7 @@ LSP-based extractor for Dafny proof/annotation tasks:
 - `focus`: full program with exactly one `/*[CODE HERE]*/` per task in the target lemma.
 - `focus --modular`: same, but **axiomatize other lemmas** by adding `{:axiom}` and **removing bodies**.
 - `sketch`: full program with all extractable statements in the target lemma removed (deleted). Output is the complete lemma body. One task per lemma.
-- `extract`: convert JSON tasks to individual `.dfy` files (extracts `program` field only, removing solutions).
+- `extract`: convert JSON tasks to individual `.dfy` files (creates `<id>.dfy` for program and `<id>_output.dfy` for solution).
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/metareflection/dafny-tasker)
@@ -50,7 +50,8 @@ python -m dafny_tasker.cli sketch --inputs 'bench/*_solution.dfy' --out sketches
 
 ### Extract: Convert JSON tasks to individual .dfy files
 ```bash
-# Extract programs from tasks (removes solutions, keeps only the program field)
+# Extract programs from tasks
+# Creates <id>.dfy (program) and <id>_output.dfy (solution) for each task
 python -m dafny_tasker.cli extract --input sketches.json --out programs_dir/
 
 # Works with both JSON and JSONL formats
