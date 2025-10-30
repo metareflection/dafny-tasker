@@ -197,11 +197,10 @@ def cmd_extract(args: argparse.Namespace) -> int:
         # Write program to file
         output_path.write_text(program, encoding='utf-8')
 
-        # Write output (solution) to separate file if present
-        if output:
-            output_filename = f"{task_id}_output.dfy"
-            output_file_path = output_dir / output_filename
-            output_file_path.write_text(output, encoding='utf-8')
+        # Write output (solution) to separate file (even if empty)
+        output_filename = f"{task_id}_output.dfy"
+        output_file_path = output_dir / output_filename
+        output_file_path.write_text(output, encoding='utf-8')
 
         count += 1
 

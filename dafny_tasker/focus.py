@@ -276,25 +276,42 @@ def build_sketch_task(path: Path, lemma_name: str, modular: bool = False, extrac
             # No sites to mask - return None (or could return lemma unchanged)
             return None
 
+        # First, create the output (sketched body with statements removed)
+        # Track how many lines we've deleted before the body end
+        lines_deleted_before_bend = 0
+
         # Remove all sites in reverse order (to avoid offset issues)
         # Simply delete the lines for each site
         new_lines = lines_for_lsp[:]
         for site in sorted(sites, key=lambda s: s.line_idx, reverse=True):
+            # Count lines deleted that would affect bend
+            num_deleted = site.end_idx - site.line_idx + 1
+            if site.line_idx <= bend:
+                lines_deleted_before_bend += num_deleted
             # Delete lines from start_idx to end_idx inclusive
             del new_lines[site.line_idx:site.end_idx+1]
 
-        # Add a SKETCH_HERE_MARKER in the lemma body after the opening brace
-        # Find the opening brace of the lemma body in new_lines
-        if bstart < len(new_lines):
-            indent = new_lines[bstart + 1][:len(new_lines[bstart + 1]) - len(new_lines[bstart + 1].lstrip())] if bstart + 1 < len(new_lines) else "  "
-            sketch_marker = f"{indent}{SKETCH_HERE_MARKER}"
-            new_lines.insert(bstart + 1, sketch_marker)
+        # Adjust bend for deleted lines
+        new_bend = bend - lines_deleted_before_bend
 
-        program = "\n".join(new_lines) + ("\n" if text.endswith("\n") else "")
-
-        # Extract the full lemma body as output
-        lemma_body_lines = lines_for_lsp[bstart:bend+1]
+        # Extract the sketched lemma body as output (from new_lines after deletions)
+        # Don't include the outer braces - just the body content
+        lemma_body_lines = new_lines[bstart+1:new_bend]
         output = "\n".join(lemma_body_lines)
+
+        # Now create the program: replace entire lemma body with just SKETCH_HERE marker
+        program_lines = lines_for_lsp[:]
+        # Delete the entire body content (keep only opening and closing braces)
+        # Delete everything between bstart+1 and bend (exclusive of braces)
+        if bend > bstart:
+            del program_lines[bstart+1:bend]
+
+        # Insert SKETCH_HERE marker after opening brace
+        indent = program_lines[bstart + 1][:len(program_lines[bstart + 1]) - len(program_lines[bstart + 1].lstrip())] if bstart + 1 < len(program_lines) else "  "
+        sketch_marker = f"{indent}{SKETCH_HERE_MARKER}"
+        program_lines.insert(bstart + 1, sketch_marker)
+
+        program = "\n".join(program_lines) + ("\n" if text.endswith("\n") else "")
 
         return {
             "id": f"{path.stem}_{lemma_name}_sketch",
