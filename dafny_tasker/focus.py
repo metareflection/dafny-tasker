@@ -5,7 +5,7 @@ from typing import List, Tuple, Optional, Dict, Any
 import re
 import uuid
 
-from .constants import CODE_HERE_MARKER
+from .constants import CODE_HERE_MARKER, SKETCH_HERE_MARKER
 from .lsp_outline import document_symbols
 from .lsp_def import goto_definition, header_contains_lemma
 
@@ -282,6 +282,13 @@ def build_sketch_task(path: Path, lemma_name: str, modular: bool = False, extrac
         for site in sorted(sites, key=lambda s: s.line_idx, reverse=True):
             # Delete lines from start_idx to end_idx inclusive
             del new_lines[site.line_idx:site.end_idx+1]
+
+        # Add a SKETCH_HERE_MARKER in the lemma body after the opening brace
+        # Find the opening brace of the lemma body in new_lines
+        if bstart < len(new_lines):
+            indent = new_lines[bstart + 1][:len(new_lines[bstart + 1]) - len(new_lines[bstart + 1].lstrip())] if bstart + 1 < len(new_lines) else "  "
+            sketch_marker = f"{indent}{SKETCH_HERE_MARKER}"
+            new_lines.insert(bstart + 1, sketch_marker)
 
         program = "\n".join(new_lines) + ("\n" if text.endswith("\n") else "")
 
