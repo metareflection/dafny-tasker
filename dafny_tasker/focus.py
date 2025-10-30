@@ -233,6 +233,74 @@ def _axiomatize_other_lemmas(path: Path, lines: List[str], target_body: Tuple[in
         out[sl:be+1] = [new_header]
     return out
 
+def build_sketch_task(path: Path, lemma_name: str, modular: bool = False, extract_types: set[str] = None) -> Optional[Dict[str,Any]]:
+    """Build a sketch task for a lemma by removing all extractable statements.
+
+    Args:
+        path: Path to the Dafny file
+        lemma_name: Name of the lemma to sketch
+        modular: If True, axiomatize other lemmas
+        extract_types: Set of types to extract ('assert', 'lemma-call', 'calc', 'forall')
+                      If None, defaults to {'assert', 'lemma-call'}
+
+    Returns:
+        A single task dictionary with the sketch as program (statements removed)
+        and full lemma body as output, or None if lemma not found
+    """
+    if extract_types is None:
+        extract_types = {'assert', 'lemma-call'}
+
+    text = path.read_text(encoding="utf-8"); lines = text.splitlines()
+    path_for_lsp = path
+    lines_for_lsp = lines
+    tmp_path: Path | None = None
+    try:
+        if modular:
+            span0 = _find_target_lemma_range(path, lemma_name, lines)
+            if not span0:
+                return None
+            _sl0, _el0, bstart0, bend0 = span0
+            mod_lines = _axiomatize_other_lemmas(path, lines, (bstart0, bend0))
+            tmp_path = path.parent / f"{path.stem}.modular.{uuid.uuid4().hex[:8]}.dfy"
+            tmp_path.write_text("\n".join(mod_lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+            path_for_lsp = tmp_path
+            lines_for_lsp = mod_lines
+
+        span = _find_target_lemma_range(path_for_lsp, lemma_name, lines_for_lsp)
+        if not span:
+            return None
+        sl, el, bstart, bend = span
+        sites = _enumerate_sites(path_for_lsp, lines_for_lsp, bstart, bend, extract_types)
+
+        if not sites:
+            # No sites to mask - return None (or could return lemma unchanged)
+            return None
+
+        # Remove all sites in reverse order (to avoid offset issues)
+        # Simply delete the lines for each site
+        new_lines = lines_for_lsp[:]
+        for site in sorted(sites, key=lambda s: s.line_idx, reverse=True):
+            # Delete lines from start_idx to end_idx inclusive
+            del new_lines[site.line_idx:site.end_idx+1]
+
+        program = "\n".join(new_lines) + ("\n" if text.endswith("\n") else "")
+
+        # Extract the full lemma body as output
+        lemma_body_lines = lines_for_lsp[bstart:bend+1]
+        output = "\n".join(lemma_body_lines)
+
+        return {
+            "id": f"{path.stem}_{lemma_name}_sketch",
+            "type": "sketch",
+            "program": program,
+            "output": output
+        }
+    finally:
+        if tmp_path and tmp_path.exists():
+            try: tmp_path.unlink()
+            except Exception: pass
+
+
 def build_focus_tasks(path: Path, lemma_name: str, modular: bool = False, extract_types: set[str] = None) -> List[Dict[str,Any]]:
     """Build tasks for a lemma. If modular=True, we first axiomatize other lemmas
     into a *temporary* Dafny file, then run the LSP on that edited program. This way,
