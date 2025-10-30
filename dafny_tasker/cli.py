@@ -149,6 +149,66 @@ def cmd_sketch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract(args: argparse.Namespace) -> int:
+    """Extract programs from JSON tasks into separate .dfy files."""
+    import json
+
+    # Read input JSON
+    input_path = args.input
+    if not input_path.exists():
+        print(f"error: input file not found: {input_path}", file=sys.stderr)
+        return 2
+
+    with input_path.open('r', encoding='utf-8') as f:
+        # Try to load as JSON list first, then JSONL
+        content = f.read()
+        try:
+            tasks = json.loads(content)
+        except json.JSONDecodeError:
+            # Try JSONL
+            tasks = []
+            for line in content.splitlines():
+                if line.strip():
+                    tasks.append(json.loads(line))
+
+    if not tasks:
+        print("error: no tasks found in input", file=sys.stderr)
+        return 2
+
+    # Create output directory
+    output_dir = args.out
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Extract each program
+    count = 0
+    for task in tasks:
+        task_id = task.get('id', f'task_{count}')
+        program = task.get('program', '')
+        output = task.get('output', '')
+
+        if not program:
+            print(f"[warn] task {task_id} has no program, skipping", file=sys.stderr)
+            continue
+
+        # Create filename from task ID
+        filename = f"{task_id}.dfy"
+        output_path = output_dir / filename
+
+        # Write program to file
+        output_path.write_text(program, encoding='utf-8')
+
+        # Write output (solution) to separate file if present
+        if output:
+            output_filename = f"{task_id}_output.dfy"
+            output_file_path = output_dir / output_filename
+            output_file_path.write_text(output, encoding='utf-8')
+
+        count += 1
+
+    print(f"Extracted {count} programs -> {output_dir}")
+    return 0
+
+
 def cmd_axiomatize(args: argparse.Namespace) -> int:
     from .focus import axiomatize_lemmas, find_lemma_containing_marker
     
@@ -196,6 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_sketch.add_argument("--json-list", action="store_true", help="Write a JSON list instead of JSONL")
     p_sketch.add_argument("--jsonl", action="store_true", help="Write JSONL (default)")
     p_sketch.set_defaults(func=cmd_sketch)
+    # extract command
+    p_extract = sub.add_parser("extract", help="Extract programs from JSON tasks into separate .dfy files")
+    p_extract.add_argument("--input", dest="input", type=Path, required=True, help="Input JSON/JSONL file with tasks")
+    p_extract.add_argument("--out", dest="out", type=Path, required=True, help="Output directory for .dfy files")
+    p_extract.set_defaults(func=cmd_extract)
     # axiomatize command
     p_axiomatize = sub.add_parser("axiomatize", help="Axiomatize all lemmas except the target lemma")
     p_axiomatize.add_argument("--file", dest="file", type=Path, required=True, help="Input .dfy file")
