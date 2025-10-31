@@ -6,6 +6,7 @@ LSP-based extractor for Dafny proof/annotation tasks:
 - `sketch`: full program with all extractable statements in the target lemma removed (deleted). Output is the complete lemma body. One task per lemma.
 - `extract`: convert JSON tasks to individual `.dfy` files (creates `<id>.dfy` for program and `<id>_output.dfy` for solution).
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
+- `minimize`: minimize lemma proofs by greedily removing unnecessary statements while maintaining verification.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/metareflection/dafny-tasker)
 
@@ -66,3 +67,34 @@ python -m dafny_tasker.cli axiomatize --file examples/bs_demo.dfy --lemma binary
 # Axiomatize: infer target lemma from CODE_HERE_MARKER location
 python -m dafny_tasker.cli axiomatize --file examples/bs_demo.dfy --out axiomatized.dfy
 ```
+
+### Minimize: Reduce lemma proofs to minimal necessary statements
+The `minimize` command reduces lemma proofs to their minimal form by greedily removing unnecessary statements while maintaining verification. It processes each lemma by:
+1. First attempting to verify with an empty body
+2. If that fails, trying to remove each extractable statement one-by-one in reverse order (bottom-up)
+3. Keeping removals that maintain successful verification
+4. Generating a JSON report with detailed statistics
+
+```bash
+# Minimize: remove unnecessary statements from lemma proofs
+python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/
+
+# Minimize (multiple files): process all lemmas in all files
+python -m dafny_tasker.cli minimize --inputs 'bench/*_solution.dfy' --out minimized_bench/
+
+# Minimize (specific lemma): only minimize a specific lemma
+python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --lemma binarySearchHelperCorrect --out minimized/
+
+# Minimize (modular): with axiomatized other lemmas
+python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/ --modular
+
+# Minimize (custom timeout): adjust verification timeout per attempt (default: 30s)
+python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/ --timeout 60
+
+# Minimize (specific statement types): only consider assert statements for removal
+python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/ --extract-types assert
+```
+
+**Output:**
+- Minimized `.dfy` files written to output directory (one per input file)
+- `minimize_report.json` with detailed statistics about what was removed from each lemma

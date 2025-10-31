@@ -210,9 +210,9 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
 def cmd_axiomatize(args: argparse.Namespace) -> int:
     from .focus import axiomatize_lemmas, find_lemma_containing_marker
-    
+
     lemma_name = args.lemma
-    
+
     # If no lemma specified, try to find it based on CODE_HERE_MARKER
     if not lemma_name:
         lemma_name = find_lemma_containing_marker(args.file)
@@ -220,13 +220,118 @@ def cmd_axiomatize(args: argparse.Namespace) -> int:
             print(f"error: no lemma specified and could not find CODE_HERE_MARKER in {args.file}", file=sys.stderr)
             return 2
         print(f"Found lemma '{lemma_name}' containing CODE_HERE_MARKER")
-    
+
     success = axiomatize_lemmas(args.file, lemma_name, args.out)
     if not success:
         print(f"error: could not find lemma '{lemma_name}' in {args.file}", file=sys.stderr)
         return 2
     print(f"wrote axiomatized file -> {args.out}")
     return 0
+
+
+def cmd_minimize(args: argparse.Namespace) -> int:
+    """Minimize lemma proofs by greedily removing unnecessary statements."""
+    from .minimize import minimize_file
+    from .focus import list_lemmas
+    import json
+
+    files = []
+    if getattr(args, "file", None):
+        files.append(args.file)
+    for pat in (getattr(args, "inputs", None) or []):
+        matches = [Path(p) for p in glob.glob(str(pat), recursive=True)]
+        if matches:
+            files.extend(matches)
+        else:
+            files.append(Path(pat))
+
+    # Deduplicate .dfy files
+    uniq = []
+    seen = set()
+    for f in files:
+        if f.suffix != ".dfy":
+            continue
+        key = str(f.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(f)
+
+    if not uniq:
+        print("no .dfy inputs provided (use --file or --inputs)", file=sys.stderr)
+        return 2
+
+    # Parse extract_types from command line
+    extract_types_str = getattr(args, "extract_types", "assert,lemma-call")
+    extract_types = set(t.strip() for t in extract_types_str.split(',') if t.strip())
+    valid_types = {'assert', 'lemma-call', 'calc', 'forall'}
+    invalid_types = extract_types - valid_types
+    if invalid_types:
+        print(f"error: invalid extract types: {invalid_types}. Valid types: {valid_types}", file=sys.stderr)
+        return 2
+
+    # Create output directory
+    output_dir = args.out
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Process each file
+    all_reports = []
+    timeout = getattr(args, "timeout", 30)
+
+    for f in tqdm(uniq, desc="Minimizing files", unit="file"):
+        # Determine lemmas to process
+        if getattr(args, "lemma", None):
+            lemmas = [args.lemma]
+        else:
+            lemmas = list_lemmas(f)
+
+        if not lemmas:
+            tqdm.write(f"[warn] no lemmas found in {f}")
+            continue
+
+        # Output file in the output directory
+        output_file = output_dir / f.name
+
+        try:
+            report = minimize_file(
+                input_path=f,
+                output_path=output_file,
+                lemmas=lemmas,
+                modular=bool(getattr(args, "modular", False)),
+                extract_types=extract_types,
+                timeout=timeout
+            )
+            all_reports.append(report)
+            tqdm.write(f"Minimized {f.name} -> {output_file}")
+
+            # Print summary for this file
+            if "lemma_reports" in report:
+                for lr in report["lemma_reports"]:
+                    if lr.get("empty_body_sufficient"):
+                        tqdm.write(f"  {lr['lemma']}: empty body sufficient")
+                    elif "error" in lr:
+                        tqdm.write(f"  {lr['lemma']}: {lr['error']}")
+                    else:
+                        removed = lr.get("statements_removed", 0)
+                        kept = lr.get("statements_kept", 0)
+                        total = lr.get("total_statements", 0)
+                        tqdm.write(f"  {lr['lemma']}: removed {removed}/{total} statements, kept {kept}")
+
+        except Exception as e:
+            tqdm.write(f"[error] failed to minimize {f}: {e}")
+            continue
+
+    # Write report JSON
+    if all_reports:
+        report_path = output_dir / "minimize_report.json"
+        with report_path.open("w", encoding="utf-8") as fh:
+            json.dump(all_reports, fh, ensure_ascii=False, indent=2)
+        print(f"\nMinimized {len(all_reports)} files -> {output_dir}")
+        print(f"Report written to {report_path}")
+        return 0
+    else:
+        print("No files were successfully minimized", file=sys.stderr)
+        return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -266,6 +371,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_axiomatize.add_argument("--lemma", dest="lemma", type=str, required=False, help="Target lemma to preserve (if omitted, inferred from CODE_HERE_MARKER location)")
     p_axiomatize.add_argument("--out", dest="out", type=Path, required=True, help="Output file path")
     p_axiomatize.set_defaults(func=cmd_axiomatize)
+    # minimize command
+    p_minimize = sub.add_parser("minimize", help="Minimize lemma proofs by removing unnecessary statements")
+    p_minimize.add_argument("--file", dest="file", type=Path, required=False, help="Single .dfy file")
+    p_minimize.add_argument("--inputs", nargs="+", help="Files or globs (e.g., 'bench/*solution.dfy')")
+    p_minimize.add_argument("--lemma", dest="lemma", type=str, required=False, help="If omitted, process every lemma in each file")
+    p_minimize.add_argument("--out", dest="out", type=Path, required=True, help="Output directory for minimized files")
+    p_minimize.add_argument("--modular", action="store_true", help="Axiomatize other lemmas ({:axiom}; no bodies)")
+    p_minimize.add_argument("--extract-types", dest="extract_types", type=str, default="assert,lemma-call",
+                        help="Comma-separated types to extract: assert,lemma-call,calc,forall (default: assert,lemma-call)")
+    p_minimize.add_argument("--timeout", dest="timeout", type=int, default=30, help="Verification timeout in seconds (default: 30)")
+    p_minimize.set_defaults(func=cmd_minimize)
     # keep optional 'check' subcommand if present
     try:
         p_check = sub.add_parser("check", help="Sanity-check a JSON list of focus tasks")
