@@ -126,8 +126,11 @@ def minimize_lemma(
             return lines_for_lsp, {
                 "lemma": lemma_name,
                 "empty_body_sufficient": False,
-                "statements_removed": [],
-                "statements_kept": []
+                "total_statements": 0,
+                "statements_removed": 0,
+                "statements_kept": 0,
+                "removed_details": [],
+                "kept_details": []
             }
 
         # Step 3: Greedy removal in reverse order
