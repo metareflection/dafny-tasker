@@ -26,9 +26,9 @@ def verify_dafny_file(file_path: Path, timeout: int = 30) -> bool:
     """
     try:
         result = subprocess.run(
-            ["dafny", "verify", str(file_path)],
+            ["dafny", "verify", f"--verification-time-limit:{timeout}", str(file_path)],
             capture_output=True,
-            timeout=timeout,
+            timeout=timeout + 5,  # Add buffer for process overhead
             text=True
         )
         return result.returncode == 0
@@ -80,7 +80,7 @@ def minimize_lemma(
         if modular:
             span0 = _find_target_lemma_range(path, lemma_name, lines)
             if not span0:
-                return lines, {"error": f"Lemma {lemma_name} not found"}
+                return lines, {"lemma": lemma_name, "error": f"Lemma {lemma_name} not found"}
             _sl0, _el0, bstart0, bend0 = span0
             mod_lines = _axiomatize_other_lemmas(path, lines, (bstart0, bend0))
             tmp_path = path.parent / f"{path.stem}.modular.{uuid.uuid4().hex[:8]}.dfy"
@@ -91,9 +91,13 @@ def minimize_lemma(
         # Find the target lemma
         span = _find_target_lemma_range(path_for_lsp, lemma_name, lines_for_lsp)
         if not span:
-            return lines, {"error": f"Lemma {lemma_name} not found"}
+            return lines, {"lemma": lemma_name, "error": f"Lemma {lemma_name} not found"}
 
         sl, el, bstart, bend = span
+
+        # Step 0: Verify the original file first
+        if not verify_dafny_file(path_for_lsp, timeout):
+            return lines, {"lemma": lemma_name, "error": f"Original file does not verify (timeout or verification failure)"}
 
         # Step 1: Try empty body first
         empty_lines = lines_for_lsp[:]
