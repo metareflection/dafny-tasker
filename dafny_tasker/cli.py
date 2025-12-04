@@ -17,7 +17,7 @@ def _write_tasks(tasks, out_path, json_list=False):
                 fh.write(json.dumps(t, ensure_ascii=False) + "\n")
 
 
-from .focus import build_focus_tasks, build_sketch_task
+from .focus import build_focus_tasks, build_sketch_task, build_empty_body_file
 
 
 def cmd_focus(args: argparse.Namespace) -> int:
@@ -229,6 +229,68 @@ def cmd_axiomatize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_empty(args: argparse.Namespace) -> int:
+    """Create .dfy files with lemma bodies emptied (one file per lemma)."""
+    from .focus import build_empty_body_file, list_lemmas
+
+    files = []
+    if getattr(args, "file", None):
+        files.append(args.file)
+    for pat in (getattr(args, "inputs", None) or []):
+        matches = [Path(p) for p in glob.glob(str(pat), recursive=True)]
+        if matches:
+            files.extend(matches)
+        else:
+            files.append(Path(pat))
+
+    # Deduplicate .dfy files
+    uniq = []
+    seen = set()
+    for f in files:
+        if f.suffix != ".dfy":
+            continue
+        key = str(f.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(f)
+
+    if not uniq:
+        print("no .dfy inputs provided (use --file or --inputs)", file=sys.stderr)
+        return 2
+
+    # Create output directory
+    output_dir = args.out
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for f in tqdm(uniq, desc="Processing files", unit="file"):
+        # Determine lemmas to process
+        if getattr(args, "lemma", None):
+            lemmas = [args.lemma]
+        else:
+            lemmas = list_lemmas(f)
+
+        if not lemmas:
+            tqdm.write(f"[warn] no lemmas found in {f}")
+            continue
+
+        for lemma in tqdm(lemmas, desc=f"  {f.name}", leave=False, unit="lemma"):
+            content = build_empty_body_file(f, lemma, modular=bool(getattr(args, "modular", False)))
+            if content is None:
+                tqdm.write(f"[warn] could not find lemma '{lemma}' in {f}")
+                continue
+
+            # Write output file: <filestem>_<lemma>.dfy
+            out_name = f"{f.stem}_{lemma}.dfy"
+            out_path = output_dir / out_name
+            out_path.write_text(content, encoding="utf-8")
+            count += 1
+
+    print(f"Created {count} emptied files -> {output_dir}")
+    return 0
+
+
 def cmd_minimize(args: argparse.Namespace) -> int:
     """Minimize lemma proofs by greedily removing unnecessary statements."""
     from .minimize import minimize_file
@@ -371,6 +433,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_axiomatize.add_argument("--lemma", dest="lemma", type=str, required=False, help="Target lemma to preserve (if omitted, inferred from CODE_HERE_MARKER location)")
     p_axiomatize.add_argument("--out", dest="out", type=Path, required=True, help="Output file path")
     p_axiomatize.set_defaults(func=cmd_axiomatize)
+    # empty command
+    p_empty = sub.add_parser("empty", help="Create .dfy files with lemma bodies emptied (one file per lemma)")
+    p_empty.add_argument("--file", dest="file", type=Path, required=False, help="Single .dfy file")
+    p_empty.add_argument("--inputs", nargs="+", help="Files or globs (e.g., 'bench/*solution.dfy')")
+    p_empty.add_argument("--lemma", dest="lemma", type=str, required=False, help="If omitted, process every lemma in each file")
+    p_empty.add_argument("--out", dest="out", type=Path, required=True, help="Output directory for emptied files")
+    p_empty.add_argument("--modular", action="store_true", help="Axiomatize other lemmas ({:axiom}; no bodies)")
+    p_empty.set_defaults(func=cmd_empty)
     # minimize command
     p_minimize = sub.add_parser("minimize", help="Minimize lemma proofs by removing unnecessary statements")
     p_minimize.add_argument("--file", dest="file", type=Path, required=False, help="Single .dfy file")

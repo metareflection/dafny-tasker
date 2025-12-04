@@ -7,6 +7,7 @@ LSP-based extractor for Dafny proof/annotation tasks:
 - `extract`: convert JSON tasks to individual `.dfy` files (creates `<id>.dfy` for program and `<id>_output.dfy` for solution).
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 - `minimize`: minimize lemma proofs by greedily removing unnecessary statements while maintaining verification.
+- `empty`: create `.dfy` files with lemma bodies emptied (one file per lemma) for training proof synthesis systems.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/metareflection/dafny-tasker)
 
@@ -98,3 +99,24 @@ python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/
 **Output:**
 - Minimized `.dfy` files written to output directory (one per input file)
 - `minimize_report.json` with detailed statistics about what was removed from each lemma
+
+### Empty: Create .dfy files with emptied lemma bodies
+The `empty` command creates standalone `.dfy` files where a specific lemma's body is emptied, while all other lemmas remain intact. This is useful for training proof synthesis systems like [dafny-zero](https://github.com/metareflection/dafny-zero) to fill in proofs one at a time.
+
+```bash
+# Empty: create one file per lemma with that lemma's body emptied
+python -m dafny_tasker.cli empty --file examples/bs_demo.dfy --out emptied/
+
+# Empty (multiple files): process all lemmas in all files
+python -m dafny_tasker.cli empty --inputs 'bench/*_solution.dfy' --out emptied_bench/
+
+# Empty (specific lemma): only empty a specific lemma
+python -m dafny_tasker.cli empty --file examples/bs_demo.dfy --lemma binarySearchCorrect --out emptied/
+
+# Empty (modular): axiomatize other lemmas while emptying the target
+python -m dafny_tasker.cli empty --file examples/bs_demo.dfy --out emptied/ --modular
+```
+
+**Output:**
+- Creates `<filestem>_<lemmaname>.dfy` for each lemma
+- Each file has the target lemma's body emptied (`{ }`) while other lemmas remain intact

@@ -437,6 +437,62 @@ def list_lemmas(path: Path) -> list[str]:
     return names
 
 
+def build_empty_body_file(path: Path, lemma_name: str, modular: bool = False) -> Optional[str]:
+    """Build a Dafny file with the specified lemma's body emptied.
+
+    Args:
+        path: Path to the Dafny file
+        lemma_name: Name of the lemma to empty
+        modular: If True, axiomatize other lemmas
+
+    Returns:
+        The modified file content as a string, or None if lemma not found
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    # Find the target lemma range
+    span = _find_target_lemma_range(path, lemma_name, lines)
+    if not span:
+        return None
+
+    _sl, _el, bstart, bend = span
+
+    # If modular, axiomatize other lemmas first
+    if modular:
+        lines = _axiomatize_other_lemmas(path, lines, (bstart, bend))
+        # Re-find the lemma range after axiomatization (line numbers may have changed)
+        # Write temp file for LSP
+        tmp_path = path.parent / f"{path.stem}.empty.tmp.dfy"
+        tmp_path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+        try:
+            span = _find_target_lemma_range(tmp_path, lemma_name, lines)
+            if not span:
+                return None
+            _sl, _el, bstart, bend = span
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    # Empty the lemma body: keep only the opening and closing braces
+    # Find the opening brace line and closing brace line
+    new_lines = lines[:]
+
+    # Get indentation from the line after opening brace (or use default)
+    if bstart + 1 < len(lines) and bstart + 1 < bend:
+        sample_line = lines[bstart + 1]
+        indent = sample_line[:len(sample_line) - len(sample_line.lstrip())]
+    else:
+        indent = "  "
+
+    # Delete everything between opening brace and closing brace
+    # Keep the line with '{' and the line with '}'
+    if bend > bstart + 1:
+        del new_lines[bstart + 1:bend]
+
+    return "\n".join(new_lines) + ("\n" if text.endswith("\n") else "")
+
+
 def find_lemma_containing_marker(path: Path) -> Optional[str]:
     """Find the lemma that contains the CODE_HERE_MARKER.
     
