@@ -424,6 +424,7 @@ def axiomatize_lemmas(input_path: Path, target_lemma: str, output_path: Path) ->
 def list_lemmas(path: Path) -> list[str]:
     """Return lemma names in file via LSP document symbols."""
     names: list[str] = []
+    seen: set[str] = set()
     lines = path.read_text(encoding="utf-8").splitlines()
     for s in document_symbols(path):
         rng = s.get("range") or {}
@@ -432,8 +433,11 @@ def list_lemmas(path: Path) -> list[str]:
         if sl < 0:
             continue
         kind, nm = _header_kind_name(lines, sl)
-        if kind == "lemma" and isinstance(s.get("name"), str):
-            names.append(s.get("name"))
+        # Use the parsed lemma name (nm) instead of s.get("name") to avoid
+        # picking up return variables like 'j' and 'k' from 'returns (j: nat, k: nat)'
+        if kind == "lemma" and nm and nm not in seen:
+            names.append(nm)
+            seen.add(nm)
     return names
 
 
