@@ -7,7 +7,7 @@ LSP-based extractor for Dafny proof/annotation tasks:
 - `extract`: convert JSON tasks to individual `.dfy` files (creates `<id>.dfy` for program and `<id>_output.dfy` for solution).
 - `axiomatize`: transform a file to axiomatize all lemmas except the target, writing the result to a new file.
 - `minimize`: minimize lemma proofs by greedily removing unnecessary statements while maintaining verification.
-- `empty`: create `.dfy` files with lemma bodies emptied (one file per lemma) for training proof synthesis systems.
+- `empty`: create `.dfy` files or JSON tasks with lemma bodies emptied (one per lemma) for training proof synthesis systems.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/metareflection/dafny-tasker)
 
@@ -100,8 +100,8 @@ python -m dafny_tasker.cli minimize --file examples/bs_demo.dfy --out minimized/
 - Minimized `.dfy` files written to output directory (one per input file)
 - `minimize_report.json` with detailed statistics about what was removed from each lemma
 
-### Empty: Create .dfy files with emptied lemma bodies
-The `empty` command creates standalone `.dfy` files where a specific lemma's body is emptied, while all other lemmas remain intact. This is useful for training proof synthesis systems like [dafny-zero](https://github.com/metareflection/dafny-zero) to fill in proofs one at a time.
+### Empty: Create .dfy files or JSON tasks with emptied lemma bodies
+The `empty` command creates standalone `.dfy` files or JSON tasks where a specific lemma's body is emptied, while all other lemmas remain intact. This is useful for training proof synthesis systems like [dafny-zero](https://github.com/metareflection/dafny-zero) to fill in proofs one at a time.
 
 ```bash
 # Empty: create one file per lemma with that lemma's body emptied
@@ -115,8 +115,18 @@ python -m dafny_tasker.cli empty --file examples/bs_demo.dfy --lemma binarySearc
 
 # Empty (modular): axiomatize other lemmas while emptying the target
 python -m dafny_tasker.cli empty --file examples/bs_demo.dfy --out emptied/ --modular
+
+# Empty (JSON output): create JSON tasks instead of .dfy files
+python -m dafny_tasker.cli empty --inputs 'bench/*_solution.dfy' --out emptied.json --json-list
+
+# Empty (JSONL output): create JSONL tasks
+python -m dafny_tasker.cli empty --inputs 'bench/*_solution.dfy' --out emptied.jsonl
 ```
 
 **Output:**
-- Creates `<filestem>_<lemmaname>.dfy` for each lemma
-- Each file has the target lemma's body emptied (`{ }`) while other lemmas remain intact
+- **Directory output** (default when `--out` is a directory): Creates `<filestem>_<lemmaname>.dfy` for each lemma
+- **JSON output** (when `--out` ends in `.json` or `.jsonl`, or when `--json-list`/`--jsonl` is specified): Creates tasks with:
+  - `id`: `<filestem>_<lemmaname>_empty`
+  - `type`: `"empty"`
+  - `program`: The full file with the target lemma's body emptied (`{ }`)
+  - `output`: The original lemma body content (the proof to be synthesized)

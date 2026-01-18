@@ -230,8 +230,8 @@ def cmd_axiomatize(args: argparse.Namespace) -> int:
 
 
 def cmd_empty(args: argparse.Namespace) -> int:
-    """Create .dfy files with lemma bodies emptied (one file per lemma)."""
-    from .focus import build_empty_body_file, list_lemmas
+    """Create .dfy files or JSON with lemma bodies emptied (one per lemma)."""
+    from .focus import build_empty_body_file, build_empty_task, list_lemmas
 
     files = []
     if getattr(args, "file", None):
@@ -259,36 +259,78 @@ def cmd_empty(args: argparse.Namespace) -> int:
         print("no .dfy inputs provided (use --file or --inputs)", file=sys.stderr)
         return 2
 
-    # Create output directory
-    output_dir = args.out
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Determine output mode: JSON if --out ends with .json/.jsonl or if --json-list/--jsonl specified
+    out_str = str(args.out)
+    jsonl = bool(getattr(args, "jsonl", False))
+    json_list = bool(getattr(args, "json_list", False))
+    use_json = jsonl or json_list or out_str.endswith('.json') or out_str.endswith('.jsonl')
 
-    count = 0
-    for f in tqdm(uniq, desc="Processing files", unit="file"):
-        # Determine lemmas to process
-        if getattr(args, "lemma", None):
-            lemmas = [args.lemma]
-        else:
-            lemmas = list_lemmas(f)
+    if use_json:
+        # JSON output mode
+        use_jsonl = jsonl or not json_list  # default to JSONL if user didn't ask JSON list
+        if not jsonl and not json_list:
+            if out_str.endswith('.json'):
+                use_jsonl = False
+            elif out_str.endswith('.jsonl'):
+                use_jsonl = True
+        if json_list and not jsonl:
+            use_jsonl = False
 
-        if not lemmas:
-            tqdm.write(f"[warn] no lemmas found in {f}")
-            continue
+        all_tasks = []
+        for f in tqdm(uniq, desc="Processing files", unit="file"):
+            if getattr(args, "lemma", None):
+                lemmas = [args.lemma]
+            else:
+                lemmas = list_lemmas(f)
 
-        for lemma in tqdm(lemmas, desc=f"  {f.name}", leave=False, unit="lemma"):
-            content = build_empty_body_file(f, lemma, modular=bool(getattr(args, "modular", False)))
-            if content is None:
-                tqdm.write(f"[warn] could not find lemma '{lemma}' in {f}")
+            if not lemmas:
+                tqdm.write(f"[warn] no lemmas found in {f}")
                 continue
 
-            # Write output file: <filestem>_<lemma>.dfy
-            out_name = f"{f.stem}_{lemma}.dfy"
-            out_path = output_dir / out_name
-            out_path.write_text(content, encoding="utf-8")
-            count += 1
+            for lemma in tqdm(lemmas, desc=f"  {f.name}", leave=False, unit="lemma"):
+                task = build_empty_task(f, lemma, modular=bool(getattr(args, "modular", False)))
+                if task is None:
+                    tqdm.write(f"[warn] could not find lemma '{lemma}' in {f}")
+                    continue
+                all_tasks.append(task)
 
-    print(f"Created {count} emptied files -> {output_dir}")
-    return 0
+        if not all_tasks:
+            print("no tasks generated", file=sys.stderr)
+            return 2
+
+        _write_tasks(all_tasks, args.out, json_list=not use_jsonl)
+        tqdm.write(f"wrote {len(all_tasks)} empty tasks -> {args.out}")
+        return 0
+    else:
+        # Directory output mode (original behavior)
+        output_dir = args.out
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        count = 0
+        for f in tqdm(uniq, desc="Processing files", unit="file"):
+            if getattr(args, "lemma", None):
+                lemmas = [args.lemma]
+            else:
+                lemmas = list_lemmas(f)
+
+            if not lemmas:
+                tqdm.write(f"[warn] no lemmas found in {f}")
+                continue
+
+            for lemma in tqdm(lemmas, desc=f"  {f.name}", leave=False, unit="lemma"):
+                content = build_empty_body_file(f, lemma, modular=bool(getattr(args, "modular", False)))
+                if content is None:
+                    tqdm.write(f"[warn] could not find lemma '{lemma}' in {f}")
+                    continue
+
+                # Write output file: <filestem>_<lemma>.dfy
+                out_name = f"{f.stem}_{lemma}.dfy"
+                out_path = output_dir / out_name
+                out_path.write_text(content, encoding="utf-8")
+                count += 1
+
+        print(f"Created {count} emptied files -> {output_dir}")
+        return 0
 
 
 def cmd_minimize(args: argparse.Namespace) -> int:
@@ -434,12 +476,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_axiomatize.add_argument("--out", dest="out", type=Path, required=True, help="Output file path")
     p_axiomatize.set_defaults(func=cmd_axiomatize)
     # empty command
-    p_empty = sub.add_parser("empty", help="Create .dfy files with lemma bodies emptied (one file per lemma)")
+    p_empty = sub.add_parser("empty", help="Create .dfy files or JSON with lemma bodies emptied (one per lemma)")
     p_empty.add_argument("--file", dest="file", type=Path, required=False, help="Single .dfy file")
     p_empty.add_argument("--inputs", nargs="+", help="Files or globs (e.g., 'bench/*solution.dfy')")
     p_empty.add_argument("--lemma", dest="lemma", type=str, required=False, help="If omitted, process every lemma in each file")
-    p_empty.add_argument("--out", dest="out", type=Path, required=True, help="Output directory for emptied files")
+    p_empty.add_argument("--out", dest="out", type=Path, required=True, help="Output directory (for .dfy files) or JSON file (.json/.jsonl)")
     p_empty.add_argument("--modular", action="store_true", help="Axiomatize other lemmas ({:axiom}; no bodies)")
+    p_empty.add_argument("--json-list", dest="json_list", action="store_true", help="Write a JSON list instead of .dfy files")
+    p_empty.add_argument("--jsonl", action="store_true", help="Write JSONL instead of .dfy files")
     p_empty.set_defaults(func=cmd_empty)
     # minimize command
     p_minimize = sub.add_parser("minimize", help="Minimize lemma proofs by removing unnecessary statements")
