@@ -25,14 +25,25 @@ def _brace_body_bounds(lines: List[str], start_line: int, end_line: int) -> Opti
     """Find the brace-delimited body of a lemma/method.
 
     Returns (start_line, end_line) of the body, or None if no body found.
-    A body starts when we see an opening brace.
     """
     n=len(lines); brace_open=-1
+
+    # First pass: look for line with more opens than closes (normal case)
     for j in range(start_line, min(end_line+1,n)):
         open_count = lines[j].count('{')
-        if open_count >= 1:
+        close_count = lines[j].count('}')
+        if open_count > close_count:
             brace_open=j
             break
+
+    # Second pass: look for line starting with { (handles empty body {} on its own line)
+    # This avoids matching set literals in requires like "requires x in {1,2,3}"
+    if brace_open == -1:
+        for j in range(start_line, min(end_line+1,n)):
+            if lines[j].lstrip().startswith('{'):
+                brace_open = j
+                break
+
     if brace_open==-1: return None
 
     # Find where the body closes
